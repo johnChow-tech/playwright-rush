@@ -1,0 +1,23 @@
+{
+  "name": "playwright-rush",
+  "version": "1.0.0",
+  "description": "*目标：完全不依赖 AI，闭卷手写出一个带有 API 加持的自动化脚本。*",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnChow-tech/playwright-rush.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/johnChow-tech/playwright-rush/issues"
+  },
+  "homepage": "https://github.com/johnChow-tech/playwright-rush#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.4.0"
+  }
+}
