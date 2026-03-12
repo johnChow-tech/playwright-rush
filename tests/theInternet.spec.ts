@@ -1,5 +1,6 @@
-import test, { Dialog, expect } from '@playwright/test';
+import test, { Dialog, expect, request } from '@playwright/test';
 import path from 'node:path';
+import fs from 'fs';
 
 const DOMAIN = 'https://the-internet.herokuapp.com';
 
@@ -124,9 +125,9 @@ test('Context Menu', async ({ page }) => {
 /**
  * 文件上传
  */
-test.describe('File Upload', () => {
+test.describe('File Uploader', () => {
   const TEST_FILE_NAME = 'random_data.txt';
-  const TEST_FILE_PATH = path.join(__dirname, `test-data/${TEST_FILE_NAME}`);
+  const TEST_FILE_PATH = path.join(__dirname, `test-data/upload/${TEST_FILE_NAME}`);
 
   test.beforeEach(async ({ page }) => {
     console.log(`[[INFO]] goto: ${DOMAIN}/upload`);
@@ -170,4 +171,99 @@ test.describe('File Upload', () => {
     const reg = new RegExp(TEST_FILE_NAME);
     await expect(dropZone).toHaveText(reg);
   });
+});
+
+test.describe('File Download', () => {
+  const downloadDir = path.join(__dirname, 'test-data', 'download');
+
+  // test.beforeEach(() => {
+  //   if (fs.existsSync(downloadDir)) {
+  //     fs.rmSync(downloadDir, { recursive: true, force: true });
+  //   }
+  // });
+
+  // test.afterEach(() => {
+  //   if (fs.existsSync(downloadDir)) {
+  //     fs.rmSync(downloadDir, { recursive: true, force: true });
+  //     console.log('[INFO] 已清除测试数据');
+  //   }
+  // });
+
+  test('Downloader', async ({ page }) => {
+    await page.goto(`${DOMAIN}/download`);
+    const body = page.locator('.example');
+    const downloadLinksCount = await body.getByRole('link').count();
+
+    const failedLinks: string[] = [];
+
+    for (let i = 0; i < downloadLinksCount; i++) {
+      const link = body.getByRole('link').nth(i);
+      const fileName = await link.textContent();
+
+      try {
+        // 其实只要拦截到download就可以证明下载成功了，不需要真的保存
+        const [download] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }), link.click()]);
+
+        // const savePath = path.join(__dirname, 'test-data', 'download', download.suggestedFilename());
+        // await download.saveAs(savePath);
+
+        console.log(`[INFO] 下载成功: ${fileName}`);
+      } catch (error) {
+        console.log(`[ERROR] 下载失败: ${fileName}`);
+        failedLinks.push(fileName || `链接：第${i + 1}`);
+
+        // 关键恢复动作：如果刚才的点击导致页面跳到了 404 错误页，我们需要退回来，才能继续点下一个！
+        if (!page.url().endsWith('download')) {
+          await page.goBack();
+        }
+      }
+    }
+
+    // 秋后算账，最后统一报错。这样的好处是可以一次检查所有链接。
+    await expect(failedLinks, `以下文件下载失败: ${failedLinks.join(', ')}`).toHaveLength(0);
+  });
+});
+
+test('Exit Intent', async ({ page }) => {
+  await page.goto(`${DOMAIN}/exit_intent`);
+
+  await page.mouse.move(0, 0);
+  // 监听鼠标离开事件
+  await page.dispatchEvent('html', 'mouseleave', { clientY: -10 });
+
+  const modal = page.locator('.modal');
+  await expect(modal).toBeVisible();
+
+  const closeBtn = modal.getByText('Close');
+  await closeBtn.click();
+  await expect(modal).toBeHidden();
+
+  await page.dispatchEvent('html', 'mouseleave', { clientY: -10 });
+  await expect(modal).toBeHidden();
+});
+
+test('Broken Images', async ({ page, request }) => {
+  await page.goto(`${DOMAIN}/broken_images`);
+  const imagesCount = await page.locator('.example').getByRole('img').count();
+
+  const brokenImagesList: string[] = [];
+  for (let i = 0; i < imagesCount; i++) {
+    const img = page.locator('.example').getByRole('img').nth(i);
+    const src = await img.getAttribute('src');
+
+    // 从UI层面找图裂的开销，要比直接从查状态码的开销要小。
+    // 如果裂图，那么naturalWidth必定为0。
+    // 所以只需要在裂图的时候去查状态码就行了。
+    const isImgOk = await img.evaluate((node: HTMLImageElement) => node.naturalWidth > 0);
+    if (!isImgOk) {
+      const imgUrl = new URL(src!, page.url()).toString();
+      const statusCode = (await request.get(imgUrl)).status();
+      if (statusCode !== 200) {
+        brokenImagesList.push(src || `图片${i}`);
+      }
+      console.log(`[WARN] 发现裂图(url:${src},位置:第${i}张)`);
+    }
+  }
+
+  await expect(brokenImagesList, `[ERROR] 存在裂图：${brokenImagesList.join(',')}`).toHaveLength(0);
 });
