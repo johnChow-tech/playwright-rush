@@ -267,3 +267,59 @@ test('Broken Images', async ({ page, request }) => {
 
   await expect(brokenImagesList, `[ERROR] 存在裂图：${brokenImagesList.join(',')}`).toHaveLength(0);
 });
+
+test('Dropdown List', async ({ page }) => {
+  await page.goto(`${DOMAIN}/dropdown`);
+  const dropdown = page.locator('#dropdown');
+
+  await dropdown.click();
+  const options = dropdown.getByRole('option');
+  await expect(options).toHaveCount(3);
+
+  let pick = 'Option 1';
+  dropdown.selectOption({ label: pick });
+  await expect(dropdown).toHaveValue(/1/);
+
+  pick = 'Option 2';
+  dropdown.selectOption({ label: pick });
+  await expect(dropdown).toHaveValue(/2/);
+
+  const disableOption = dropdown.getByRole('option', { name: 'Please select an option' });
+  await expect(disableOption).toBeDisabled();
+});
+
+test('Infinite Scroll - 极限压榨性能版', async ({ page }) => {
+  await page.goto(`${DOMAIN}/infinite_scroll`);
+
+  const items = page.locator('.jscroll-added');
+  const MAX_SCROLLS = 15;
+  let currentScroll = 0;
+  let currentCount = await items.count();
+
+  // 预先点击一下页面主体，确保后续的键盘指令能精准发送给当前窗口
+  await page.locator('body').click();
+
+  while (currentScroll < MAX_SCROLLS) {
+    console.log(`[向下探测] 滚动前数据量: ${currentCount}`);
+
+    await page.waitForTimeout(1000);
+
+    try {
+      // ⚡ 架构师的终极奥义：Promise.all 并发！
+      // 意思：我先布置好等下一个元素的陷阱，同时按下 End 键砸到底部。
+      // 只要前端渲染完成，立刻放行，绝不多等 1 毫秒！
+      await Promise.all([
+        page.locator('#page-footer').scrollIntoViewIfNeeded({ timeout: 5000 }),
+        items.nth(currentCount).waitFor({ state: 'attached', timeout: 5000 }),
+      ]);
+    } catch (error) {
+      console.log(`⏳ 5秒内第 ${currentCount + 1} 个元素没有出现，已触底！`);
+      break;
+    }
+
+    currentCount = await items.count();
+    currentScroll++;
+  }
+
+  console.log(`🏁 探测结束，最终拿到 ${currentCount} 条数据！`);
+});
